@@ -1,0 +1,56 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Generate the Android project
+        run: flutter create --platforms=android --project-name calm_bills .
+
+      - name: Add notification permissions
+        run: |
+          python3 - <<'PY'
+          path = "android/app/src/main/AndroidManifest.xml"
+          text = open(path).read()
+          perms = (
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n'
+              '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n'
+              '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n'
+          )
+          if "POST_NOTIFICATIONS" not in text:
+              text = text.replace("<application", perms + "    <application", 1)
+              open(path, "w").write(text)
+          PY
+
+      - name: Download the packages
+        run: flutter pub get
+
+      - name: Build the APK
+        run: flutter build apk --release
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: calm-bills-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
