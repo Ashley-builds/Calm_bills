@@ -40,6 +40,64 @@ jobs:
           if "POST_NOTIFICATIONS" not in text:
               text = text.replace("<application", perms + "    <application", 1)
               open(path, "w").write(text)
+          print("manifest done")
+          PY
+
+      - name: Turn on desugaring
+        run: |
+          python3 - <<'PY'
+          import os
+
+          kts = "android/app/build.gradle.kts"
+          groovy = "android/app/build.gradle"
+
+          if os.path.exists(kts):
+              path, is_kts = kts, True
+          else:
+              path, is_kts = groovy, False
+
+          text = open(path).read()
+
+          if is_kts:
+              flag = "        isCoreLibraryDesugaringEnabled = true\n"
+              dep = (
+                  '\ndependencies {\n'
+                  '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n'
+                  '}\n'
+              )
+              block = (
+                  "    compileOptions {\n"
+                  "        isCoreLibraryDesugaringEnabled = true\n"
+                  "        sourceCompatibility = JavaVersion.VERSION_11\n"
+                  "        targetCompatibility = JavaVersion.VERSION_11\n"
+                  "    }\n"
+              )
+          else:
+              flag = "        coreLibraryDesugaringEnabled true\n"
+              dep = (
+                  '\ndependencies {\n'
+                  "    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n"
+                  '}\n'
+              )
+              block = (
+                  "    compileOptions {\n"
+                  "        coreLibraryDesugaringEnabled true\n"
+                  "        sourceCompatibility JavaVersion.VERSION_11\n"
+                  "        targetCompatibility JavaVersion.VERSION_11\n"
+                  "    }\n"
+              )
+
+          if "compileOptions" in text:
+              text = text.replace("compileOptions {", "compileOptions {\n" + flag.rstrip("\n"), 1)
+          else:
+              text = text.replace("android {", "android {\n" + block, 1)
+
+          if "coreLibraryDesugaring(" not in text and "coreLibraryDesugaring '" not in text:
+              text = text + dep
+
+          open(path, "w").write(text)
+          print("--- gradle file now ---")
+          print(text)
           PY
 
       - name: Download the packages
