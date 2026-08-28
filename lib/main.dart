@@ -502,6 +502,7 @@ class Notifier {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Notifier.init();
+  await Notifier.testNow();
   runApp(const CalmBills());
 }
 
