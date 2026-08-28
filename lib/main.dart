@@ -417,14 +417,38 @@ class Notifier {
     const settings = InitializationSettings(android: android);
     await _plugin.initialize(settings);
 
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    if (androidPlugin != null) {
+      // Android 13+ asks before it lets an app notify.
+      await androidPlugin.requestNotificationsPermission();
+      // Android 12+ needs this separately for timed reminders.
+      await androidPlugin.requestExactAlarmsPermission();
+    }
   }
 
-  // Wipe and re-book everything. Simpler and safer than tracking
-  // which individual reminders changed.
+  // Fires straight away. Proves permission, channel and delivery
+  // all work, without waiting until 9am.
+  static Future<void> testNow() async {
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'calm_bills',
+        'Bill reminders',
+        channelDescription: 'Warnings before a payment is due',
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+    );
+
+    await _plugin.show(
+      99999,
+      'Reminders are on',
+      'This is how a bill warning will look.',
+      details,
+    );
+  }
+
   static Future<void> rescheduleAll(
       List<Payment> payments, String symbol) async {
     await _plugin.cancelAll();
@@ -435,10 +459,18 @@ class Notifier {
 
   static Future<void> _scheduleFor(Payment p, String symbol) async {
     final when = p.reminderDate;
+    final now = tz.TZDateTime.now(tz.local);
 
-    // Fire at 9am on the reminder day.
-    final at = tz.TZDateTime(tz.local, when.year, when.month, when.day, 9);
-    if (at.isBefore(tz.TZDateTime.now(tz.local))) return;
+    var at = tz.TZDateTime(tz.local, when.year, when.month, when.day, 9);
+
+    // If 9am on the reminder day has already gone but the bill
+    // is still coming, warn in a minute rather than staying silent.
+    if (at.isBefore(now)) {
+      final due = tz.TZDateTime(
+          tz.local, p.dueDate.year, p.dueDate.month, p.dueDate.day, 9);
+      if (due.isBefore(now)) return;
+      at = now.add(const Duration(minutes: 1));
+    }
 
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -458,7 +490,7 @@ class Notifier {
       '$symbol${p.amount.toStringAsFixed(2)} due in ${p.reminderDays} $word',
       at,
       details,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
     );
