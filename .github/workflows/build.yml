@@ -27,7 +27,7 @@ jobs:
       - name: Generate the Android project
         run: flutter create --platforms=android --project-name calm_bills .
 
-      - name: Add notification permissions
+      - name: Add permissions and set the app name
         run: |
           python3 - <<'PY'
           path = "android/app/src/main/AndroidManifest.xml"
@@ -36,11 +36,61 @@ jobs:
               '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n'
               '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n'
               '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n'
+              '    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>\n'
           )
           if "POST_NOTIFICATIONS" not in text:
               text = text.replace("<application", perms + "    <application", 1)
-              open(path, "w").write(text)
+          text = text.replace('android:label="calm_bills"', 'android:label="Calm Bills"')
+          open(path, "w").write(text)
           print("manifest done")
+          PY
+
+      - name: Draw the app icon
+        run: |
+          pip install pillow
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw
+          import os
+
+          INK = (22, 32, 43)
+          PALE = (241, 245, 249)
+          AMBER = (232, 163, 61)
+
+          SIZES = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+
+          def draw_icon(size):
+              scale = 8
+              s = size * scale
+              img = Image.new("RGBA", (s, s), INK + (255,))
+              d = ImageDraw.Draw(img)
+              stroke = int(s * 0.10)
+              pad = int(s * 0.23)
+              d.arc([pad, pad, s - pad, s - pad], start=140, end=70,
+                    fill=PALE + (255,), width=stroke)
+              r = int(s * 0.075)
+              c = s // 2
+              d.ellipse([c - r, c - r, c + r, c + r], fill=AMBER + (255,))
+              return img.resize((size, size), Image.LANCZOS)
+
+          base = "android/app/src/main/res"
+          for folder, size in SIZES.items():
+              p = os.path.join(base, folder)
+              os.makedirs(p, exist_ok=True)
+              draw_icon(size).save(os.path.join(p, "ic_launcher.png"))
+              print("wrote", folder, size)
+
+          adaptive = os.path.join(base, "mipmap-anydpi-v26")
+          if os.path.isdir(adaptive):
+              for f in os.listdir(adaptive):
+                  os.remove(os.path.join(adaptive, f))
+              os.rmdir(adaptive)
+              print("removed adaptive icon folder")
           PY
 
       - name: Turn on desugaring
@@ -60,32 +110,24 @@ jobs:
 
           if is_kts:
               flag = "        isCoreLibraryDesugaringEnabled = true\n"
-              dep = (
-                  '\ndependencies {\n'
-                  '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n'
-                  '}\n'
-              )
-              block = (
-                  "    compileOptions {\n"
-                  "        isCoreLibraryDesugaringEnabled = true\n"
-                  "        sourceCompatibility = JavaVersion.VERSION_11\n"
-                  "        targetCompatibility = JavaVersion.VERSION_11\n"
-                  "    }\n"
-              )
+              dep = ('\ndependencies {\n'
+                     '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n'
+                     '}\n')
+              block = ("    compileOptions {\n"
+                       "        isCoreLibraryDesugaringEnabled = true\n"
+                       "        sourceCompatibility = JavaVersion.VERSION_11\n"
+                       "        targetCompatibility = JavaVersion.VERSION_11\n"
+                       "    }\n")
           else:
               flag = "        coreLibraryDesugaringEnabled true\n"
-              dep = (
-                  '\ndependencies {\n'
-                  "    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n"
-                  '}\n'
-              )
-              block = (
-                  "    compileOptions {\n"
-                  "        coreLibraryDesugaringEnabled true\n"
-                  "        sourceCompatibility JavaVersion.VERSION_11\n"
-                  "        targetCompatibility JavaVersion.VERSION_11\n"
-                  "    }\n"
-              )
+              dep = ('\ndependencies {\n'
+                     "    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n"
+                     '}\n')
+              block = ("    compileOptions {\n"
+                       "        coreLibraryDesugaringEnabled true\n"
+                       "        sourceCompatibility JavaVersion.VERSION_11\n"
+                       "        targetCompatibility JavaVersion.VERSION_11\n"
+                       "    }\n")
 
           if "compileOptions" in text:
               text = text.replace("compileOptions {", "compileOptions {\n" + flag.rstrip("\n"), 1)
@@ -96,8 +138,7 @@ jobs:
               text = text + dep
 
           open(path, "w").write(text)
-          print("--- gradle file now ---")
-          print(text)
+          print("gradle done")
           PY
 
       - name: Download the packages
